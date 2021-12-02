@@ -1,7 +1,7 @@
 # iGen
 iGen allows for interactive generation of Gaussian 16 input files (.com's) from .xyz's or .gjf's in a local directory.
 
-Given a folder containing .xyz or .gjf (from GaussView) files, create G16 inputs interactively from the command line
+Given a folder containing .xyz or .gjf (from GaussView) files, create G16 inputs interactively from the command line:
 <br />![image](https://user-images.githubusercontent.com/49004818/144347445-15486c9b-8640-4f93-a03b-85689fb8bb19.png)
 
 Based on your choice of input files, iGen will locate all files in local directory. You can select a single .xyz/.gjf file to create an input for, a range (based on a keyword), or batch submission for all .xyz/.gjf's in current directory:
