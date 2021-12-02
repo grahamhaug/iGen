@@ -12,7 +12,7 @@
 ### CONFIGURATION ###
 #Change this to point at your G16_Input_Template's Location:
 templateLoc=/home1/05793/rdg758/scripts/G16_Input_Template.txt
-#Need to change function "whichQ" to reflect your system queue manager (for Frontera or Stampede2)
+#Need to change function "whichQ" to reflect your system queue manager (currently written for TACC's Stampede2)
 
 ### PRINT JOB HEADER ###
 echo ""
