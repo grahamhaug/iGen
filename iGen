@@ -1,0 +1,1000 @@
+#!/bin/bash
+
+#iGen
+#v1.0
+#12/1/2021
+
+#Description and Use
+#create G16 inputs from .xyz and/or .gjf files
+#call from command line with "iGen" - interactive menus allow selection of job parameters/source of geometry
+
+### CONFIGURATION ###
+#Change this to point at your G16_Input_Template's Location:
+templateLoc=/home1/05793/rdg758/scripts/G16_Input_Template.txt
+#Need to change function "whichQ" to reflect your system queue manager (for Frontera or Stampede2)
+
+### PRINT JOB HEADER ###
+echo ""
+echo "-----------------------------------------------------------------"
+echo "                               iGen                              "
+echo "                Batch Generation of G16 Input Files              "
+echo "-----------------------------------------------------------------"
+
+### COLORS FOR FUN FORMATTING ###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+PURP='\033[1;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+#determines the set of .xyz's to make inputs for 
+function getXYZs {
+	while true;do 
+	#search current directory for .xyz's (create inputs for all xyz's in current directory)
+	echo -e "${CYAN}Locating ${PURP}.xyz ${CYAN}files in current directory...${NC}"
+	#locate all .xyz's in current directory
+	xyzResults=$(ls *.xyz 2> /dev/null | tr ' ' '\n')
+	#count how many xyz's were found
+	xyzResultsCount=$(echo "$xyzResults" | wc -l)
+	#print out the search results
+	echo -e "${CYAN}Located (${PURP}${xyzResultsCount}${CYAN}) ${PURP}.xyz ${CYAN}files in current directory:${NC}"
+	echo "$xyzResults"
+
+	#Determine how many .xyz's will be made
+	echo -e "\n${CYAN}What would you like to do?${NC}"
+	xyzSelectQ=$(echo -e "${CYAN}Select an option:    ${NC}")
+	xyzSelectOptions=("Specify a single .xyz" "Select a range of .xyz's by keyword" "Select all .xyz's in current directory" "Exit")
+	PS3=$xyzSelectQ
+	COLUMNS=0
+	select fsCase in "${xyzSelectOptions[@]}"; do
+		case $REPLY in
+			1) #Specify a single .xyz
+				#capture user-specified job
+				userXYZ=$(echo -e "${GREEN}Enter the .xyz name (no extension) to make an input for: ${NC}")
+				read -ep "$userXYZ" singtypedXYZ
+
+				#make sure the .xyz exists in current directory
+				searchResults=$(ls ${singtypedXYZ}.xyz 2> /dev/null | tr ' ' '\n')
+				if [ -f "$searchResults" ]; then
+					echo -e "${PURP}${singtypedXYZ}.xyz ${GREEN}located in current directory.${NC}" 
+				elif [ -z "$searchResults" ]; then
+					echo -e "${RED}No files match your string.${NC}"
+					exit 1
+				fi
+					
+				#assign the input to xyzsToSubmit
+				xyzToSubmit=${searchResults}
+				echo -e "\n${CYAN}Creating input for:${NC}"
+				echo "${xyzToSubmit}"
+				break 2;;
+
+			2) #Specify a range of .xyz's by keyword
+				while true; do
+					#capture user-specified prefix
+					userXYZ=$(echo -e "${GREEN}What prefix/keyword to search for?: ${NC}")
+					read -ep "$userXYZ" typedXYZ
+
+					#search current directory for .xyz files containing the specified string
+					echo -e "${CYAN}Searching for .xyz's containing prefix: '${PURP}${typedXYZ}${CYAN}'...${NC}"
+					searchResults=$(ls *${typedXYZ}*.xyz 2> /dev/null | tr ' ' '\n')
+					#check if user entered some nonsense (is $searchResults empty?)
+					if [ -z "$searchResults" ]; then
+						echo -e "${RED}No files match your string.${NC}"
+						exit 1
+					fi
+					#return the results of keyword search
+					searchResultsCount=$(echo "$searchResults" | wc -l)
+					echo -e "\n${CYAN}Search returns ${PURP}${searchResultsCount}${CYAN} results:${NC}"
+					echo "$searchResults"
+
+					#confirm that the located range is correct
+					echo -e "\n${GREEN}Is this range of .xyz's correct?${NC}"
+					fileSelectQ=$(echo -e "${CYAN}Select an option:    ${NC}")
+					fileSelectOptions=("Correct" "Define a different keyword" "Exit")
+					PS3=$fileSelectQ
+					COLUMNS=0
+					select fsCase in "${fileSelectOptions[@]}"; do
+						case $REPLY in
+							1) #correct
+								xyzToSubmit=${searchResults}
+								echo -e "\n${CYAN}Creating inputs for: ${NC}"
+								echo "${xyzToSubmit}"
+								break 2;;
+
+							2) #define a different search term
+								break;;
+
+							3) #exit
+								echo -e "${RED}Exiting...\n${NC}"
+								exit 1;;
+
+							*) #error
+								echo -e "${RED}Select one of the above options...\n${NC}"
+								continue;;
+						esac
+					done
+				done
+				break 2;;
+
+			3) #Specify all .xyz's in current directory
+				#assign all xyz's located to the submission set
+				xyzToSubmit=${xyzResults}
+				echo -e "\n${CYAN}Creating inputs for:${NC}"
+				echo "${xyzToSubmit}"
+				break 2;;
+
+			4) #exit
+				echo -e "${RED}Exiting...\n${NC}"
+				exit 1;;
+
+			*) #error
+				echo -e "${RED}Select one of the above options...\n${NC}"
+				continue;;
+		esac
+	done
+	done
+}	
+
+#determines the set of .gjf's to make inputs for 
+function getGJFs {
+	while true; do 
+	#search current directory for .gjf's (create inputs for all gjf's in current directory)
+	echo -e "${CYAN}Locating ${PURP}.gjf ${CYAN}files in current directory...${NC}"
+	#locate all .gjf's in current directory
+	gjfResults=$(ls *.gjf 2> /dev/null | tr ' ' '\n')
+	#count how many gjf's were found
+	gjfResultsCount=$(echo "$gjfResults" | wc -l)
+	#print out the search results
+	echo -e "${CYAN}Located (${PURP}${gjfResultsCount}${CYAN}) ${PURP}.gjf ${CYAN}files in current directory:${NC}"
+	echo "$gjfResults"
+
+	#Determine how many .gjf's will be made
+	echo -e "\n${CYAN}What would you like to do?${NC}"
+	gjfSelectQ=$(echo -e "${CYAN}Select an option:    ${NC}")
+	gjfSelectOptions=("Specify a single .gjf" "Select a range of .gjf's by keyword" "Select all .gjf's in current directory" "Exit")
+	PS3=$gjfSelectQ
+	COLUMNS=0
+	select fsCase in "${gjfSelectOptions[@]}"; do
+		case $REPLY in
+			1) #Specify a single .gjf
+				#capture user-specified job
+				userGJF=$(echo -e "${GREEN}Enter the .gjf name (no extension) to make an input for: ${NC}")
+				read -ep "$userGJF" singtypedGJF
+
+				#make sure the .gjf exists in current directory
+				searchResults=$(ls ${singtypedGJF}.gjf 2> /dev/null | tr ' ' '\n')
+				if [ -f "$searchResults" ]; then
+					echo -e "${PURP}${singtypedGJF}.gjf ${GREEN}located in current directory.${NC}" 
+				elif [ -z "$searchResults" ]; then
+					echo -e "${RED}No files match your string.${NC}"
+					exit 1
+				fi
+					
+				#assign the input to gjfsToSubmit
+				gjfToSubmit=${searchResults}
+				echo -e "\n${CYAN}Creating input for:${NC}"
+				echo "${gjfToSubmit}"
+				break 2;;
+
+			2) #Specify a range of .gjf's by keyword
+				while true; do
+					#capture user-specified prefix
+					userGJF=$(echo -e "${GREEN}What prefix/keyword to search for?: ${NC}")
+					read -ep "$userGJF" typedGJF
+
+					#search current directory for .gjf files containing the specified string
+					echo -e "${CYAN}Searching for .gjf's containing prefix: '${PURP}${typedGJF}${CYAN}'...${NC}"
+					searchResults=$(ls *${typedGJF}*.gjf 2> /dev/null | tr ' ' '\n')
+					#check if user entered some nonsense (is $searchResults empty?)
+					if [ -z "$searchResults" ]; then
+						echo -e "${RED}No files match your string.${NC}"
+						exit 1
+					fi
+					#return the results of keyword search
+					searchResultsCount=$(echo "$searchResults" | wc -l)
+					echo -e "\n${CYAN}Search returns ${PURP}${searchResultsCount}${CYAN} results:${NC}"
+					echo "$searchResults"
+
+					#confirm that the located range is correct
+					echo -e "\n${GREEN}Is this range of .gjf's correct?${NC}"
+					fileSelectQ=$(echo -e "${CYAN}Select an option:    ${NC}")
+					fileSelectOptions=("Correct" "Define a different keyword" "Exit")
+					PS3=$fileSelectQ
+					COLUMNS=0
+					select fsCase in "${fileSelectOptions[@]}"; do
+						case $REPLY in
+							1) #correct
+								gjfToSubmit=${searchResults}
+								echo -e "\n${CYAN}Creating inputs for: ${NC}"
+								echo "${gjfToSubmit}"
+								break 2;;
+
+							2) #define a different search term
+								break;;
+
+							3) #exit
+								echo -e "${RED}Exiting...\n${NC}"
+								exit 1;;
+
+							*) #error
+								echo -e "${RED}Select one of the above options...\n${NC}"
+								continue;;
+						esac
+					done
+				done
+				break 2;;
+
+			3) #Specify all .gjf's in current directory
+				#assign all gjf's located to the submission set
+				gjfToSubmit=${gjfResults}
+				echo -e "\n${CYAN}Creating inputs for:${NC}"
+				echo "${gjfToSubmit}"
+				break 2;;
+
+			4) #exit
+				echo -e "${RED}Exiting...\n${NC}"
+				exit 1;;
+
+			*) #error
+				echo -e "${RED}Select one of the above options...\n${NC}"
+				continue;;
+		esac
+	done
+	done
+}	
+
+#Menu for job type to run
+function whichJobType {
+        echo ""
+        #user specifies the type of job to run
+        echo -e "${GREEN}What type of job to run?${NC}"
+        jobTypePrompt=$(echo -e "${CYAN}Select job type:   ${NC}")
+        jobOptions=("Opt+Freq" "Transition State Frozen Pre-Opt" "Transition State Opt" "Single Point" "SP+Freq" "Scan" "IRC" "Vertical Excitation")
+                PS3=$jobTypePrompt
+        COLUMNS=0
+        select jobtype in "${jobOptions[@]}"; do
+                case $REPLY in
+                        1) #Opt+Freq
+                                export JOBTYPE='opt=(tight) freq'
+                                echo -e "${GREEN}Job Type: ${CYAN}Opt+Freq${NC}"
+                                export jtype=''
+                                break;;
+
+                        2) #TSS Frozen Pre-Opt
+                                export JOBTYPE='opt=(tight,modredun) freq'
+                                echo -e "${GREEN}Job Type: ${CYAN}TSS Frozen Pre-Opt${NC}"
+                                echo -e "${RED}You need to manually enter your frozen coordinate(s).${NC}"
+                                export jtype='-frz'
+                                break;;
+
+                        3) #TSS Opt
+                                export JOBTYPE='opt=(ts,calcfc,noeigentest,tight) freq'
+                                echo -e "${GREEN}Job Type: ${CYAN}TSS Opt${NC}"
+                                export jtype='-tsopt'
+                                break;;
+
+                        4) #Single Point
+                                export JOBTYPE=''
+                                echo -e "${GREEN}Job Type: ${CYAN}Single Point${NC}"
+                                export jtype='-sp'
+                                break;;
+
+                        5) #SP + Freq
+                                export JOBTYPE='freq'
+                                echo -e "${GREEN}Job Type: ${CYAN}Single Point + Freq${NC}"
+                                export jtype='-freq'
+                                break;;
+
+                        6) #Scan
+                                export JOBTYPE='opt=(tight,modredun)'
+                                echo -e "${GREEN}Job Type: ${CYAN}Scan${NC}"
+                                echo -e "${RED}You need to manually enter your modredun parameters to the input file(s).${NC}"
+                                export jtype='-scan'
+                                break;;
+
+                        7) #IRC
+                                #how to make a reverse at the same time...? Placeholder for now
+                                export JOBTYPE='IRC=(calcFC,forward,maxpoints=120,stepsize=7,maxcycles=500) iop(1/7=300)'
+                                echo -e "${GREEN}Job Type: ${CYAN}IRC${NC}"
+                                echo -e "${RED}Input will be made for ircf - need to cp and replace ircr.${NC}"
+                                export jtype='-ircf'
+                                break;;
+
+                        8) #Vertical Excitation
+                                #ask user how many excited states to consider
+                                numExcited=$(echo -e "${GREEN}How many excited states to consider? \n${CYAN}Enter number:   ${NC}")
+                                read -ep "$numExcited" userExcited
+                                export JOBTYPE='td=nstates=${userExcited}'
+                                echo -e "${GREEN}Job Type: ${CYAN}VE with ${userExcited} states${NC}"
+                                export jtype='-ve'
+                                break;;
+
+                        *) #error catch
+                                echo -e "${RED}Error: ${NC} select one of the above basis sets...\n"
+                                continue;;
+                esac
+        done
+}
+
+#Menu controlling DFA selection
+function whichDFA {
+#what basis set to use
+	echo ''
+	echo -e "${GREEN}Select a DFA to use:${NC}"
+	dfaQ=$(echo -e "${CYAN}List or manual?   ${NC}")
+	initOptions=("Pick from a list" "Enter manually")
+	PS3=$dfaQ
+	COLUMNS=0
+	select initCase in "${initOptions[@]}"; do
+		case $REPLY in
+			1) #Pick from a list
+				#This is a simple list of my most commonly used and doesn't include "gen" option, yet
+				#eventually include options for SP basis sets like TZVPPD - but will need a "database" file that has the
+				#BS for each atom and can parse geoms for atoms to determine - much more complicated case
+				echo ''
+				echo -e "${GREEN}Select a DFA from the list: ${NC}"
+				selectDFA=$(echo -e "${CYAN}Which DFA:  ${NC}")
+				#can add/remove common options, here
+				dfaOptions=("M06-2X(D3)" "wB97X-D" "PW6B95(D3BJ)" "PBEO(D3BJ)" "B3LYP(D3BJ)" "CAM-B3LYP(D3BJ)" "MN15")
+				PS3=$selectDFA
+				select dfa in "${dfaOptions[@]}"; do
+					case $REPLY in
+						1) #M06-2X(D3)
+							export DFA='m062x'
+							export DISPERSION='empiricaldispersion=gd3'
+							echo -e "${GREEN}Using DFA: ${CYAN}M06-2X(D3)${NC}\n"
+							export xc='-m062xd3'
+							break;;
+							
+						2) #wB97X-D
+							export DFA='wb97xd'
+							export DISPERSION=''
+							echo -e "${GREEN}Using DFA: ${CYAN}wB97X-D${NC}\n"
+							export xc='-wb97xd'
+							break;;
+							
+						3) #PW6B95-D3BJ
+							export DFA='pw6b95d3'
+							export DISPERSION='empiricaldispersion=gd3bj'
+							echo -e "${GREEN}Using DFA: ${CYAN}PW6B95(D3BJ)${NC}\n"
+							export xc='-pw6b95d3bj'
+							break;;
+						4) #PBE0-D3
+							export DFA='pbe1pbe'
+							export DISPERSION='empiricaldispersion=gd3bj'
+							echo -e "${GREEN}Using DFA: ${CYAN}PBE0(D3BJ)${NC}\n"
+							export xc='-pbe0d3bj'
+							break;;
+	
+						5) #B3LYP-D3BJ
+							export DFA='b3lyp'
+							export DISPERSION='empiricaldispersion=gd3bj'
+							echo -e "${GREEN}Using DFA: ${CYAN}B3LYP(D3BJ)${NC}\n"
+							export xc='-b3lypd3bj'
+							break;;
+							
+						6) #CAM-B3LYP-D3BJ
+							export DFA='cam-b3lyp'
+							export DISPERSION='empiricaldispersion=gd3bj'
+							echo -e "${GREEN}Using DFA: ${CYAN}CAM-B3LYP(D3BJ)${NC}\n"
+							export xc='-camb3lypd3bj'
+							break;;
+						
+						7) #MN15
+							export DFA='mn15'
+							export DISPERSION=''
+							echo -e "${GREEN}Using DFA: ${CYAN}MN15${NC}\n"
+							export xc='-mn15'
+							break;;
+							
+						*) #Error Catch
+							echo -e "${RED}Error: ${NC} select one of the above DFAs...\n"
+							continue;;
+					esac
+				done
+				break;;
+				
+			2) # User Enters DFA Manually
+				echo""
+				echo -e "${RED}Make sure your keyword format is correct...${NC}"
+				userDFA=$(echo -e "${GREEN}Type your DFA keyword: ${NC}")
+				read -ep "$userDFA" typedDFA
+				echo -e "${GREEN}Using DFA: ${CYAN}$typedDFA${NC}\n"
+				export DFA=${typedDFA}
+				export xc='-${typedDFA}'
+				
+				#check if user wants to specify a dispersion method in addition to their entered DFA
+				while true; do
+				userDisp=$(echo -e "${GREEN}Specify empirical dispersion? (y/n) ${NC}")
+				read -ep "$userDisp" yn
+					case $yn in
+						[Yy]* ) #yes case
+							selectDisp=$(echo -e "${GREEN}Select D3 or D3(BJ) Dispersion.${NC}")
+							dispOptions=("D3" "D3(BJ)")
+							PS3=$selectDisp
+							COLUMNS=0
+							select dispmodel in "${dispOptions[@]}"; do
+								case $REPLY in
+									1) #D3
+										export DISPERSION='empiricaldispersion=gd3'
+										echo -e "${GREEN}Using dispersion: ${CYAN}D3${NC}"
+										break;;
+										
+									2) #D3(BJ)
+										export DISPERSION='empiricaldispersion=gd3bj'
+										echo -e "${GREEN}Using dispersion: ${CYAN}D3(BJ)${NC}"
+										break;;
+										
+									*) #Error Catch
+										echo -e "${RED}Error: ${NC} select D3 or D3(BJ) dispersion...\n"
+										continue;;
+								esac
+							done 
+							break;;	
+							
+						[Nn]* ) #no case
+							export DISPERSION=''
+							break;;
+							
+						* )	#error case
+							echo -e "${RED}Enter y/n...\n${NC}"
+							continue;;
+					esac
+				done
+				break;;
+			
+			*) #Error Catch
+				echo -e "${RED}Error: ${NC} select option 1 or 2...\n"
+				continue;;
+		esac
+	done
+}
+
+#Menu controlling which Basis set is used
+function whichBasis {
+	#what basis set to use
+	echo -e "${GREEN}Which Basis Set to use:${NC}"
+	basisQ=$(echo -e "${CYAN}Select Basis Set option.   ${NC}")
+	initOptions=("Pick from a list" "Enter manually")
+	PS3=$basisQ
+	COLUMNS=0
+	select initCase in "${initOptions[@]}"; do
+		case $REPLY in
+			1) #Pick from a list
+				#This is a simple list of my most commonly used and doesn't include "gen" option, yet
+				#eventually include options for SP basis sets like TZVPPD - but will need a "database" file that has the
+				#BS for each atom and can parse geoms for atoms to determine - much more complicated case
+				echo ""
+				echo -e "${GREEN}Which Basis set:${NC}"
+				selectBasis=$(echo -e "${CYAN}Select a Basis Set option:  ${NC}")
+				#can add/remove common options, here
+				basisOptions=("def2-SVP" "def2-TZVP" "6-31+G*" "6-311+G**")
+				PS3=$selectBasis
+				select basisSet in "${basisOptions[@]}"; do
+					case $REPLY in
+						1) #def2-SVP
+							export BASIS='def2svp'
+							echo -e "${GREEN}Using Basis: ${CYAN}def2-SVP${NC}\n"
+							export bset='-def2svp'
+							break;;
+							
+						2) #def2-TZVP
+							export BASIS='def2tzvp'
+							echo -e "${GREEN}Using Basis: ${CYAN}def2-TZVP${NC}\n"
+							export bset='-def2tzvp'
+							break;;
+							
+						3) #6-31+G*
+							export BASIS='6-31+g*'
+							echo -e "${GREEN}Using Basis: ${CYAN}6-31+G*${NC}\n"
+							export bset='-dzpop'
+							break;;
+							
+						4) #6-311+G**
+							export BASIS='6-311+g**'
+							echo -e "${GREEN}Using Basis: ${CYAN}6-311+G**${NC}\n"
+							export bset='-tzpop'
+							break;;
+							
+						*) #Error Catch
+							echo -e "${RED}Error: ${NC} select one of the above basis sets...\n"
+							continue;;
+					esac
+				done
+				break;;
+				
+			2) # Enter Manually
+				echo""
+				echo -e "${RED}Make sure your format is correct...${NC}"
+				userBasis=$(echo -e "${GREEN}Type your basis set: ${NC}")
+				read -ep "$userBasis" typedBasis
+				echo -e "${GREEN}Using Basis: ${CYAN}$typedBasis${NC}\n"
+				export BASIS=${typedBasis}
+				export bset='-${typedBasis}'
+				break;; 
+				
+			*) #Error Catch
+				echo -e "${RED}Error: ${NC} select option 1 or 2...\n"
+				continue;;
+		esac
+	done
+}
+
+#menu controlling Solvation Model (or gas phase)
+function whichSolvation {
+	#choose gas phase or solvation calculation
+	while true; do
+		ynSolvation=$(echo -e "${GREEN}Use Solvation model? ${CYAN}(y/n) ${NC}")
+		read -ep "$ynSolvation" yn
+			case $yn in 
+				[Yy]* ) #yes case => need to select solvation model
+					echo ""
+					echo -e "${GREEN}Which solvation model?${NC}"
+					selectISM=$(echo -e "${CYAN}Select SMD/PCM:   ${NC}")
+					ismOptions=("SMD" "PCM")
+					PS3=$selectISM
+					COLUMNS=0
+					select ism in "${ismOptions[@]}"; do
+						case $REPLY in
+							1) #SMD Model
+								#specify the solvent
+								echo ""
+								echo -e "${GREEN}Model which solvent with SMD:${NC}"
+								solventID=$(echo -e "${CYAN}Select a solvent:   ${NC}")
+								#can add more solvents here as needed
+								solvOptions=("Water" "MeCN" "DCM" "DMF" "THF" "DMAc")
+								PS3=$solventID
+								COLUMNS=0
+								select solvID in "${solvOptions[@]}"; do
+									case $REPLY in
+										1) #water
+											export SOLVATION='scrf=(solvent=water,smd)'
+											echo -e "${GREEN}Using solvation: ${CYAN}SMD(water)${NC}"
+											export solv='-smd'
+											break;;
+										
+										2) #acetonitrile
+											export SOLVATION='scrf=(solvent=acetonitrile,smd)'
+											echo -e "${GREEN}Using solvation: ${CYAN}SMD(MeCN)${NC}"
+											export solv='-smd'
+											break;;
+												
+										3) #dichloromethane
+											export SOLVATION='scrf=(solvent=dichloromethane,smd)'
+											echo -e "${GREEN}Using solvation: ${CYAN}SMD(DCM)${NC}"
+											export solv='-smd'
+											break;;
+											
+										4) #n,n-dimethylformamide
+											export SOLVATION='scrf=(solvent=n,n-dimethylformamide,smd)'
+											echo -e "${GREEN}Using solvation: ${CYAN}SMD(DMF)${NC}"
+											export solv='-smd'
+											break;;
+
+										5) #tetrahydrofuran
+											export SOLVATION='scrf=(solvent=tetrahydrofuran,smd)'
+											echo -e "${GREEN}Using solvation: ${CYAN}SMD(THF)${NC}"
+											export solv='-smd'
+											break;;
+
+										6) #n,n-dimetyhlacetamide
+											export SOLVATION='scrf=(solvent=n,n-dimethylacetamide,smd)'
+											echo -e "${GREEN}Using solvation: ${CYAN}SMD(DMAc)${NC}"
+											export solv='-smd'
+											break;;
+											
+										*) #error case
+											echo -e "${RED}Choose from one of the listed solvents...\n${NC}"
+											continue;;
+									esac
+								done
+								break;;
+										
+							2) #PCM Model
+								#specify the solvent
+								echo ""
+								echo -e "${GREEN}Model which solvent with PCM:${NC}"
+								solventID=$(echo -e "${CYAN}Select a solvent:   ${NC}")
+								#can add more solvents here as needed
+								solvOptions=("Water" "MeCN" "DCM")
+								PS3=$solventID
+								COLUMNS=0
+								select solvID in "${solvOptions[@]}"; do
+									case $REPLY in
+										1) #water
+											export SOLVATION='scrf=(solvent=water,pcm)'
+											echo -e "${GREEN}Using solvation: ${CYAN}PCM(water)${NC}"
+											export solv='-pcm'
+											break;;
+											
+										2) #acetonitrile
+											export SOLVATION='scrf=(solvent=acetonitrile,pcm)'
+											echo -e "${GREEN}Using solvation: ${CYAN}PCM(MeCN)${NC}"
+											export solv='-pcm'
+											break;;
+												
+										3) #dichloromethane
+											export SOLVATION='scrf=(solvent=dichloromethane,pcm)'
+											echo -e "${GREEN}Using solvation: ${CYAN}PCM(DCM)${NC}"
+											export solv='-pcm'
+											break;;
+											
+										*) #error case
+											echo -e "${RED}Choose from one of the listed solvents...\n${NC}"
+											continue;;
+									esac
+								done
+								break;;
+									
+							*) #Error Catch
+								echo -e "${RED}Error: ${NC} select SMD or PCM...\n"
+								continue;;
+						esac
+					done 
+					break;;	
+					
+				[Nn]* ) #no case => Gas Phase calc
+					export SOLVATION=''
+					export solv=''
+					break;;
+						
+				* )	#error case
+					echo -e "${RED}Enter y/n...\n${NC}"
+					continue;;
+			esac
+	done
+}	
+
+function whichQ {
+	#which queue to run on - determines %nproc and %mem parameters in input.com's
+	echo ""
+	queueQ=$(echo -e "${GREEN}Which queue to use?   ${NC}")
+	queueOptions=("Normal" "SKX-Normal")
+	PS3=$queueQ
+	COLUMNS=0
+	select qCase in "${queueOptions[@]}"; do 
+		case $REPLY in
+			1) #Normal
+				export NUMTASK=64
+				export MEM=70
+				echo -e "${GREEN}Using queue: ${CYAN}Normal${NC}\n"
+				break;;
+
+			2) #SKX-Normal
+				export NUMTASK=48
+				export MEM=128
+				echo -e "${GREEN}Using queue: ${CYAN}SKX-Normal${NC}\n"
+				break;;
+
+			*) #Error Catch
+				echo -e "${RED}Error: ${NC} select Normal or SKX...\n"
+				continue;;
+		esac
+	done
+}
+
+#ease of life single call for the above menus
+function getParams {
+	#get the job type from the user
+	whichJobType
+	#get the DFA from the user
+	whichDFA
+	#get the Basis set from the user
+	whichBasis
+	#Get solvation conditions from user
+	whichSolvation
+	#determine the queue to submit on (system specific function - written for Stampede2 currently)
+	whichQ
+}
+
+#ask user if they want to use .xyz files or .gjf files for input 
+echo -e "\n${CYAN}Create G16 inputs from what type of input?${NC}"
+inpQ=$(echo -e "${CYAN}Select an option:   ${NC}")
+inpQOptions=("Create G16 inputs from .xyz's" "Create G16 inputs from .gjf's" "Exit iGen") 
+PS3=$inpQ
+COLUMNS=0
+select inpCase in "${inpQOptions[@]}"; do 
+	case $REPLY in
+		1)	#Create G16 inputs from .xyz's
+			echo -e "\n${GREEN}Generating G16 input files from ${PURP}.xyz's${NC}."
+			getXYZs
+			#count how many .xyz's were chosen
+			xyzCount=$(echo "${xyzToSubmit}" | wc -l)
+			
+			#the number of jobs determines charge/multiplicity prompt
+            if [ "$xyzCount" = 1 ]; then
+				#get the charge from user
+				userSingleCharge=$(echo -e "${GREEN}Enter charge: ${NC}")
+				read -ep "$userSingleCharge" userCharge
+						
+				#get the multiplicity from user
+				userSingleMult=$(echo -e "${GREEN}Enter multiplicity: ${NC}")
+				read -ep "$userSingleMult" userMult
+							
+				#store user's Charge/Mult for subs into template
+				export CHARGE=$userCharge
+				export MULTIPLICITY=$userMult
+				
+				#determine the location of the current directory
+				submitLoc=$(pwd)
+				checkLoc=$(echo "$submitLoc/")
+				export CHECKLOC=${checkLoc}
+								
+				#pull the geometry out of the current XYZ file
+				grabXYZ=$(awk '$1 ~ /[A-Z]/ {printf "%-4s %15.10f %15.10f %15.10f\n", $1, $2, $3, $4}' $xyzToSubmit)
+				#store single job's XYZ for export
+				export GEOM=$grabXYZ
+				
+				#get job parameters from the user
+				getParams				
+
+				#determine the job name
+				currentJob=$(basename -s .xyz $xyzToSubmit)
+				#assign that variable for envSubst to the jobTemplate
+				expandedJob="${currentJob}${xc}${bset}${solv}${jtype}"
+				export JOBNAME=${expandedJob}
+
+				#make a new input.com for single job based on G16_template file
+				envsubst '${NUMTASK} ${MEM} ${DFA} ${DISPERSION} ${BASIS} ${SOLVATION} ${JOBTYPE} ${JOBNAME} ${CHECKLOC} ${CHARGE} ${MULTIPLICITY} ${GEOM}' <$templateLoc> ./$expandedJob.com
+				
+				#output for job creation
+				echo -e "${PURP}$expandedJob.com${GREEN} created.${NC}\n"	
+				
+			elif [ "xyzCount" > 1 ]; then
+				echo -e "\n${CYAN}How to handle Charge and Multiplicity?${NC}"
+				cmQ=$(echo -e "${CYAN}Select an option:   ${NC}")
+				cmOptions=("All inputs share same Charge/Multiplicity" "Enter Charge/Multiplicity by job" "Exit iGen") 
+				PS3=$cmQ
+				COLUMNS=0
+				select inpCase in "${cmOptions[@]}"; do 
+					case $REPLY in
+						1) #All inputs share same Charge/Multiplicity
+							#get the charge from user
+							userSharedCharge=$(echo -e "${GREEN}Enter common charge: ${NC}")
+							read -ep "$userSharedCharge" userCharge
+						
+							#get the multiplicity from user
+							userSharedMult=$(echo -e "${GREEN}Enter common multiplicity: ${NC}")
+							read -ep "$userSharedMult" userMult
+							
+							#store user's Charge/Mult for subs into template
+							export CHARGE=$userCharge
+							export MULTIPLICITY=$userMult
+			
+							#determine the location of the current directory
+							submitLoc=$(pwd)
+							checkLoc=$(echo "$submitLoc/")
+							export CHECKLOC=${checkLoc}
+			
+							#get shared job parameters from the user
+							getParams	
+									
+							for subJob in $xyzToSubmit; do
+								currentJob=$(basename -s .xyz $subJob)
+								expandedJob="${currentJob}${xc}${bset}${solv}${jtype}"
+								export JOBNAME=${expandedJob}
+								
+								#pull the geometry out of the current .gjf file
+								grabXYZ=$(awk '$1 ~ /[A-Z]/ {printf "%-4s %15.10f %15.10f %15.10f\n", $1, $2, $3, $4}' $subJob)
+								#printf "$grabXYZ"
+								export GEOM=$grabXYZ
+															
+								#make a new input.com for single job based on G16_template file
+								envsubst '${NUMTASK} ${MEM} ${DFA} ${DISPERSION} ${BASIS} ${SOLVATION} ${JOBTYPE} ${JOBNAME} ${CHECKLOC} ${CHARGE} ${MULTIPLICITY} ${GEOM}' <$templateLoc> ./$expandedJob.com
+								
+								#output for job creation
+								echo -e "${PURP}$expandedJob.com${GREEN} created.${NC}"
+							done	
+							echo ""
+							break;;
+		
+						2) #Enter Charge/Multiplicity by job
+							#determine the location of the current directory
+							submitLoc=$(pwd)
+							checkLoc=$(echo "$submitLoc/")
+							export CHECKLOC=${checkLoc}
+							
+							echo -e "\n${PURP}First, select common job parameters:${NC}"
+							
+							#get shared job parameters from the user
+							getParams	
+							
+							for subJob in $xyzToSubmit; do
+								currentJob=$(basename -s .xyz $subJob)
+								expandedJob="${currentJob}${xc}${bset}${solv}${jtype}"
+								export JOBNAME=${expandedJob}
+								
+								#get the charge from user
+								userSharedCharge=$(echo -e "${CYAN}Enter charge for ${PURP}${currentJob}: ${NC}")
+								read -ep "$userSharedCharge" userCharge
+						
+								#get the multiplicity from user
+								userSharedMult=$(echo -e "${CYAN}Enter multiplicity for ${PURP}${currentJob}: ${NC}")
+								read -ep "$userSharedMult" userMult
+							
+								#store user's Charge/Mult for subs into template
+								export CHARGE=$userCharge
+								export MULTIPLICITY=$userMult
+								
+								#pull the geometry out of the current .gjf file
+								grabXYZ=$(awk '$1 ~ /[A-Z]/ {printf "%-4s %15.10f %15.10f %15.10f\n", $1, $2, $3, $4}' $subJob)
+								export GEOM=$grabXYZ
+															
+								#make a new input.com for single job based on G16_template file
+								envsubst '${NUMTASK} ${MEM} ${DFA} ${DISPERSION} ${BASIS} ${SOLVATION} ${JOBTYPE} ${JOBNAME} ${CHECKLOC} ${CHARGE} ${MULTIPLICITY} ${GEOM}' <$templateLoc> ./$expandedJob.com
+								
+								#output for job creation
+								echo -e "${PURP}$expandedJob.com${GREEN} created.${NC}\n"
+							done			
+							break;;
+				
+						3) #Exit
+							exit;;
+				
+						*) 	#Error Catch
+							echo -e "${RED}Select from one of the above...\n${NC}"
+							continue;;
+			
+					esac
+				done
+
+				#here is a conundrum - how to deal with charge/mult for many files
+			fi
+			break;;
+	
+		2)  #Create G16 inputs from .gjf's
+			echo -e "\n${GREEN}Generating G16 input files from ${PURP}.gjf's's${NC}."		
+			getGJFs
+			#count how many .xyz's were chosen
+			gjfCount=$(echo "${gjfToSubmit}" | wc -l)
+			
+			#the number of jobs determines charge/multiplicity prompt
+            if [ "$gjfCount" = 1 ]; then
+				#get the charge from user
+				userSingleCharge=$(echo -e "${GREEN}Enter charge: ${NC}")
+				read -ep "$userSingleCharge" userCharge
+						
+				#get the multiplicity from user
+				userSingleMult=$(echo -e "${GREEN}Enter multiplicity: ${NC}")
+				read -ep "$userSingleMult" userMult
+							
+				#store user's Charge/Mult for subs into template
+				export CHARGE=$userCharge
+				export MULTIPLICITY=$userMult
+				
+				#determine the location of the current directory
+				#this is where the .chk/output files will be routed
+				submitLoc=$(pwd)
+				checkLoc=$(echo "$submitLoc/")
+				export CHECKLOC=${checkLoc}
+								
+				#pull the geometry out of the current .gjf file
+				grabXYZ=$(awk '$1 ~ /^[A-Z]{1,2}/ {printf "%-4s %15.10f %15.10f %15.10f\n", $1, $2, $3, $4}' $gjfToSubmit)
+				#store single job's XYZ for export
+				export GEOM=$grabXYZ
+				
+				#get job parameters from the user
+				getParams				
+
+				#determine the job name
+				currentJob=$(basename -s .gjf $gjfToSubmit)
+				#assign that variable for envSubst to the jobTemplate
+				expandedJob="${currentJob}${xc}${bset}${solv}${jtype}"
+				export JOBNAME=${expandedJob}
+
+				#make a new input.com for single job based on G16_template file
+				envsubst '${NUMTASK} ${MEM} ${DFA} ${DISPERSION} ${BASIS} ${SOLVATION} ${JOBTYPE} ${JOBNAME} ${CHECKLOC} ${CHARGE} ${MULTIPLICITY} ${GEOM}' <$templateLoc> ./$expandedJob.com
+								
+				#output for job creation
+				echo -e "${PURP}$expandedJob.com${GREEN} created.${NC}\n"
+
+			elif [ "gjfCount" > 1 ]; then
+				echo -e "\n${CYAN}How to handle Charge and Multiplicity?${NC}"
+				cmQ=$(echo -e "${CYAN}Select an option:   ${NC}")
+				cmOptions=("All inputs share same Charge/Multiplicity" "Enter Charge/Multiplicity by job" "Exit iGen") 
+				PS3=$cmQ
+				COLUMNS=0
+				select inpCase in "${cmOptions[@]}"; do 
+					case $REPLY in
+						1) #All inputs share same Charge/Multiplicity
+							#get the charge from user
+							userSharedCharge=$(echo -e "${GREEN}Enter common charge: ${NC}")
+							read -ep "$userSharedCharge" userCharge
+						
+							#get the multiplicity from user
+							userSharedMult=$(echo -e "${GREEN}Enter common multiplicity: ${NC}")
+							read -ep "$userSharedMult" userMult
+							
+							#store user's Charge/Mult for subs into template
+							export CHARGE=$userCharge
+							export MULTIPLICITY=$userMult
+			
+							#determine the location of the current directory
+							submitLoc=$(pwd)
+							checkLoc=$(echo "$submitLoc/")
+							export CHECKLOC=${checkLoc}
+			
+							#get shared job parameters from the user
+							getParams	
+									
+							for subJob in $gjfToSubmit; do
+								currentJob=$(basename -s .gjf $subJob)
+								expandedJob="${currentJob}${xc}${bset}${solv}${jtype}"
+								export JOBNAME=${expandedJob}
+								
+								#pull the geometry out of the current .gjf file
+								grabXYZ=$(awk '$1 ~ /^[A-Z]{1,2}/ {printf "%-4s %15.10f %15.10f %15.10f\n", $1, $2, $3, $4}' $subJob)
+								#printf "$grabXYZ"
+								export GEOM=$grabXYZ
+															
+								#make a new input.com for single job based on G16_template file
+								envsubst '${NUMTASK} ${MEM} ${DFA} ${DISPERSION} ${BASIS} ${SOLVATION} ${JOBTYPE} ${JOBNAME} ${CHECKLOC} ${CHARGE} ${MULTIPLICITY} ${GEOM}' <$templateLoc> ./$expandedJob.com
+				
+								#output for job creation
+								echo -e "${PURP}$expandedJob.com${GREEN} created.${NC}"
+							done	
+							echo ""
+							break;;
+		
+						2) #Enter Charge/Multiplicity by job
+							#determine the location of the current directory
+							submitLoc=$(pwd)
+							checkLoc=$(echo "$submitLoc/")
+							export CHECKLOC=${checkLoc}
+							
+							echo -e "\n${PURP}First, select common job parameters:${NC}"
+			
+							#get shared job parameters from the user
+							getParams	
+							
+							for subJob in $gjfToSubmit; do
+								currentJob=$(basename -s .gjf $subJob)
+								expandedJob="${currentJob}${xc}${bset}${solv}${jtype}"
+								export JOBNAME=${expandedJob}
+								
+								#get the charge from user
+								userSharedCharge=$(echo -e "${CYAN}Enter charge for ${PURP}${currentJob}: ${NC}")
+								read -ep "$userSharedCharge" userCharge
+						
+								#get the multiplicity from user
+								userSharedMult=$(echo -e "${CYAN}Enter multiplicity for ${PURP}${currentJob}: ${NC}")
+								read -ep "$userSharedMult" userMult
+							
+								#store user's Charge/Mult for subs into template
+								export CHARGE=$userCharge
+								export MULTIPLICITY=$userMult
+								
+								#pull the geometry out of the current .gjf file
+								grabXYZ=$(awk '$1 ~ /^[A-Z]{1,2}/ {printf "%-4s %15.10f %15.10f %15.10f\n", $1, $2, $3, $4}' $subJob)
+								export GEOM=$grabXYZ
+															
+								#make a new input.com for single job based on G16_template file
+								envsubst '${NUMTASK} ${MEM} ${DFA} ${DISPERSION} ${BASIS} ${SOLVATION} ${JOBTYPE} ${JOBNAME} ${CHECKLOC} ${CHARGE} ${MULTIPLICITY} ${GEOM}' <$templateLoc> ./$expandedJob.com
+								
+								#output for job creation
+								echo -e "${PURP}$expandedJob.com${GREEN} created.${NC}\n"
+								done
+							break;;
+		
+						3) #Exit
+							exit;;
+				
+						*) 	#Error Catch
+							echo -e "${RED}Select from one of the above...\n${NC}"
+							continue;;
+			
+					esac
+				done
+			fi
+			break;;	
+		
+		3)  #exit iGen
+			echo -e "${RED}Exiting...\n${NC}"
+			exit;;
+		
+		*) 	#Error Catch
+			echo -e "${RED}Select from one of the above...\n${NC}"
+			continue;;
+			
+	esac 
+done

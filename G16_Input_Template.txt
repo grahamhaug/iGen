@@ -1,0 +1,13 @@
+%nproc=${NUMTASK}
+%mem=${MEM}gb
+%chk=${CHECKLOC}${JOBNAME}.chk
+#p ${DFA}/${BASIS} ${DISPERSION} nosymm int=ultrafine ${JOBTYPE} ${SOLVATION}
+
+${JOBNAME}
+
+${CHARGE} ${MULTIPLICITY}
+${GEOM}  
+   
+
+
+
